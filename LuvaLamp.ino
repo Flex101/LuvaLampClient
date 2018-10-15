@@ -20,6 +20,14 @@ float brightness = 1.0;
 bool fadeOut = false;
 void(* resetFunc) (void) = 0;
 
+bool touch = false;
+bool touchPrev = false;
+unsigned long touchDown = 0;
+bool touchLong = false;
+unsigned long touchLongUp = 0;
+bool settingColor = false;
+byte colorMsg[] = { 0, 0, 0, 13, 10 };
+
 WiFiManager wifiManager;
 WiFiClient client;
 
@@ -72,12 +80,39 @@ void loop()
   }
   else
   {
-    if (digitalRead(TOUCH_INPUT))
+    touch = digitalRead(TOUCH_INPUT);
+
+    if (touch && !touchPrev) touchDown = millis();
+
+    if (touch && ((millis() - touchDown) > 1000))
+    {
+      touchLong = true;
+    }
+
+    if (touch && touchLong)
     {
       colorWheelIndex++;
       displayColor();
       delay(10);
+      settingColor = true;
     }
+
+    if (!touch && touchPrev && !touchLong)
+    {
+      if (settingColor) sendColor();
+      else displayOff();
+    }
+
+    if (!touch && touchPrev && touchLong) touchLongUp = millis();
+
+    if (!touch && settingColor && ((millis() - touchLongUp) > 5000))
+    {
+      fadeOut = true;
+      settingColor = false;
+    }
+
+    touchPrev = touch;
+    if (!touch) touchLong = false;
   }
 
   if (client.connected())
@@ -88,8 +123,8 @@ void loop()
       colorG = client.read();
       colorB = client.read();
       client.read();
-      client.read();
-      displayPulse();
+      client.read();  
+      if (colorR + colorG + colorB > 0) displayPulse();
     }
     else if (client.available() > 5)
     {
@@ -205,6 +240,26 @@ void displayOff()
 
 void displayPulse()
 {
+  analogWrite(PWM_R, colorR);
+  analogWrite(PWM_G, colorG);
+  analogWrite(PWM_B, colorB);
+}
+
+void sendColor()
+{
+  colorMsg[0] = colorR;
+  colorMsg[1] = colorG;
+  colorMsg[2] = colorB;
+  client.write(colorMsg, 5);
+
+  delay(250);
+
+  digitalWrite(PWM_R, LOW);
+  digitalWrite(PWM_G, LOW);
+  digitalWrite(PWM_B, LOW);
+
+  delay (250);
+
   analogWrite(PWM_R, colorR);
   analogWrite(PWM_G, colorG);
   analogWrite(PWM_B, colorB);
